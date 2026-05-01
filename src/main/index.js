@@ -4,6 +4,7 @@ const { randomUUID } = require('crypto')
 const { execFile } = require('child_process')
 const Store = require('electron-store')
 const { createClient } = require('@supabase/supabase-js')
+const pixelMonitor = require('./pixelMonitor')
 
 // ── Persistent store ─────────────────────────────────────────────────────────
 const store = new Store({
@@ -11,7 +12,14 @@ const store = new Store({
   defaults: {
     buttons: [],
     categories: [],
-    settings: { supabaseUrl: '', supabaseKey: '', agentId: '' }
+    settings: { supabaseUrl: '', supabaseKey: '', agentId: '' },
+    pixelMonitor: {
+      enabled: false,
+      region: null,
+      intervalMs: 500,
+      tolerance: 30,
+      calibration: { live_call: null, hung_up: null, idle: null }
+    }
   }
 })
 
@@ -19,10 +27,12 @@ const store = new Store({
 let mainWindow = null
 let overlayWindow = null
 let pendingCaptureId = null
+let pendingRegionCapture = false
 let supabase = null
 let realtimeChannel = null
 let pollInterval = null
 const executingIds = new Set()
+let currentCallStatus = 'idle'
 
 const isDev = process.env.NODE_ENV !== 'production'
 const rendererUrl = process.env['ELECTRON_RENDERER_URL']
@@ -73,6 +83,7 @@ async function initSupabase() {
     await pushAllButtonsToSupabase()
     if (agentId) startRealtimeListener(agentId)
     mainWindow?.webContents.send('supabase:status', { connected: true })
+    syncPixelMonitor()
   } catch (e) {
     console.error('[Supabase] init failed:', e.message)
     supabase = null
@@ -117,6 +128,38 @@ async function pushAllButtonsToSupabase() {
     const { error } = await supabase.from('categories').upsert(rows)
     if (error) console.error('[Supabase] bulk category sync error:', error.message)
   }
+}
+
+async function pushCallStatusToSupabase(status) {
+  if (!supabase) return
+  const { agentId } = store.get('settings')
+  if (!agentId) return
+  const { error } = await supabase
+    .from('agent_status')
+    .upsert({ agent_id: agentId, status, updated_at: new Date().toISOString() }, { onConflict: 'agent_id' })
+  if (error) console.error('[PixelMonitor] Supabase upsert error:', error.message)
+}
+
+function syncPixelMonitor() {
+  const pm = store.get('pixelMonitor')
+  pixelMonitor.stop()
+  if (!pm.enabled || !pm.region) return
+  if (!pm.calibration.live_call && !pm.calibration.hung_up && !pm.calibration.idle) return
+
+  pixelMonitor.start(
+    {
+      region: pm.region,
+      calibration: pm.calibration,
+      intervalMs: pm.intervalMs,
+      tolerance: pm.tolerance,
+      debounceCount: 3
+    },
+    (status) => {
+      currentCallStatus = status
+      mainWindow?.webContents.send('pixelMonitor:status', { status })
+      pushCallStatusToSupabase(status)
+    }
+  )
 }
 
 async function handleCommand(cmd) {
@@ -253,6 +296,7 @@ app.whenReady().then(async () => {
   createMainWindow()
   createOverlayWindow()
   await initSupabase()
+  syncPixelMonitor()
 })
 
 app.on('window-all-closed', () => {
@@ -462,6 +506,65 @@ ipcMain.handle('capture:submit', (_, coords) => {
 ipcMain.handle('capture:cancel', () => {
   overlayWindow.hide()
   pendingCaptureId = null
+  setTimeout(() => { mainWindow.restore(); mainWindow.focus() }, 120)
+})
+
+// ── Pixel Monitor IPC ─────────────────────────────────────────────────────────
+ipcMain.handle('pixelMonitor:getConfig', () => store.get('pixelMonitor'))
+
+ipcMain.handle('pixelMonitor:saveConfig', (_, patch) => {
+  const current = store.get('pixelMonitor')
+  const updated = { ...current, ...patch }
+  store.set('pixelMonitor', updated)
+  syncPixelMonitor()
+  return updated
+})
+
+ipcMain.handle('pixelMonitor:calibrate', async (_, { state }) => {
+  const pm = store.get('pixelMonitor')
+  if (!pm.region) return { ok: false, error: 'No region selected' }
+  try {
+    const color = await pixelMonitor.sampleRegion(pm.region)
+    if (!color) return { ok: false, error: 'Capture returned no pixels' }
+    const calibration = { ...pm.calibration, [state]: color }
+    store.set('pixelMonitor', { ...pm, calibration })
+    syncPixelMonitor()
+    return { ok: true, color }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+})
+
+ipcMain.handle('pixelMonitor:getStatus', () => ({ status: currentCallStatus }))
+
+// ── Region capture ─────────────────────────────────────────────────────────────
+ipcMain.handle('capture:startRegion', () => {
+  pendingRegionCapture = true
+  const { bounds } = screen.getPrimaryDisplay()
+  overlayWindow.setBounds(bounds)
+  mainWindow.minimize()
+  setTimeout(() => {
+    overlayWindow.show()
+    overlayWindow.focus()
+    overlayWindow.webContents.send('overlay:activateRegion')
+  }, 280)
+})
+
+ipcMain.handle('capture:submitRegion', (_, region) => {
+  overlayWindow.hide()
+  pendingRegionCapture = false
+  setTimeout(() => {
+    mainWindow.restore()
+    mainWindow.focus()
+    const pm = store.get('pixelMonitor')
+    store.set('pixelMonitor', { ...pm, region })
+    mainWindow?.webContents.send('capture:resultRegion', region)
+  }, 120)
+})
+
+ipcMain.handle('capture:cancelRegion', () => {
+  overlayWindow.hide()
+  pendingRegionCapture = false
   setTimeout(() => { mainWindow.restore(); mainWindow.focus() }, 120)
 })
 
