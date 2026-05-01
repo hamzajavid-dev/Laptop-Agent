@@ -70,3 +70,23 @@ drop policy if exists "allow_all" on public.commands;
 create policy "allow_all" on public.categories for all using (true) with check (true);
 create policy "allow_all" on public.buttons for all using (true) with check (true);
 create policy "allow_all" on public.commands for all using (true) with check (true);
+
+-- Agent call status (pixel monitoring)
+create table if not exists public.agent_status (
+  id         uuid primary key default gen_random_uuid(),
+  agent_id   text not null unique,
+  status     text not null default 'idle',  -- 'live_call' | 'hung_up' | 'idle'
+  updated_at timestamptz not null default now()
+);
+
+alter table public.agent_status enable row level security;
+drop policy if exists "allow_all" on public.agent_status;
+create policy "allow_all" on public.agent_status for all using (true) with check (true);
+
+-- Enable Realtime for agent_status
+do $$
+begin
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'agent_status') then
+        alter publication supabase_realtime add table public.agent_status;
+    end if;
+end $$;
