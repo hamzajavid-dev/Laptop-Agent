@@ -53,6 +53,33 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.off('command:result', h)
   },
 
+  // --- Pixel Monitor ---
+  getPixelMonitorConfig: () => ipcRenderer.invoke('pixelMonitor:getConfig'),
+  savePixelMonitorConfig: (patch) => ipcRenderer.invoke('pixelMonitor:saveConfig', patch),
+  calibratePixelMonitor: (state) => ipcRenderer.invoke('pixelMonitor:calibrate', { state }),
+  getPixelMonitorStatus: () => ipcRenderer.invoke('pixelMonitor:getStatus'),
+
+  // --- Region capture ---
+  startRegionCapture: () => ipcRenderer.invoke('capture:startRegion'),
+  submitRegionCapture: (region) => ipcRenderer.invoke('capture:submitRegion', region),
+  cancelRegionCapture: () => ipcRenderer.invoke('capture:cancelRegion'),
+
+  onPixelMonitorStatus: (cb) => {
+    const h = (_, d) => cb(d)
+    ipcRenderer.on('pixelMonitor:status', h)
+    return () => ipcRenderer.off('pixelMonitor:status', h)
+  },
+  onRegionCaptureResult: (cb) => {
+    const h = (_, d) => cb(d)
+    ipcRenderer.on('capture:resultRegion', h)
+    return () => ipcRenderer.off('capture:resultRegion', h)
+  },
+  onOverlayActivateRegion: (cb) => {
+    const h = () => cb()
+    ipcRenderer.on('overlay:activateRegion', h)
+    return () => ipcRenderer.off('overlay:activateRegion', h)
+  },
+
   // --- Window controls ---
   minimize: () => ipcRenderer.invoke('window:minimize'),
   maximize: () => ipcRenderer.invoke('window:maximize'),
