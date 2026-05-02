@@ -1,10 +1,66 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, desktopCapturer } = require('electron')
 const { join } = require('path')
 const { randomUUID } = require('crypto')
 const { execFile } = require('child_process')
 const Store = require('electron-store')
 const { createClient } = require('@supabase/supabase-js')
-const pixelMonitor = require('./pixelMonitor')
+// ── Pixel Monitor (inlined to avoid Rollup CJS bundling issues) ───────────────
+const pixelMonitor = (() => {
+
+  let _timer = null, _lastConfirmed = null, _readings = [], _onStatusChange = null, _config = null, _ticking = false
+
+  async function _captureRegionAvgColor(region) {
+    const display = screen.getPrimaryDisplay()
+    const { width, height } = display.size
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } })
+    if (!sources.length) return null
+    const cropped = sources[0].thumbnail.crop({ x: Math.round(region.x), y: Math.round(region.y), width: Math.max(1, Math.round(region.width)), height: Math.max(1, Math.round(region.height)) })
+    const bitmap = cropped.toBitmap()
+    if (!bitmap.length) return null
+    let r = 0, g = 0, b = 0
+    const pixelCount = bitmap.length / 4
+    for (let i = 0; i < bitmap.length; i += 4) { r += bitmap[i]; g += bitmap[i + 1]; b += bitmap[i + 2] }
+    return { r: Math.round(r / pixelCount), g: Math.round(g / pixelCount), b: Math.round(b / pixelCount) }
+  }
+
+  function _colorDistance(a, b) { return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2) }
+
+  function _classify(avg, calibration, tolerance) {
+    const states = ['live_call', 'hung_up', 'idle']
+    let best = null, bestDist = Infinity
+    for (const state of states) { const cal = calibration[state]; if (!cal) continue; const dist = _colorDistance(avg, cal); if (dist < bestDist) { bestDist = dist; best = state } }
+    if (best === null || bestDist > tolerance) return 'idle'
+    return best
+  }
+
+  async function _tick() {
+    if (_ticking || !_config) return
+    _ticking = true
+    try {
+      const avg = await _captureRegionAvgColor(_config.region)
+      if (!avg) return
+      const detected = _classify(avg, _config.calibration, _config.tolerance)
+      _readings.push(detected)
+      if (_readings.length > _config.debounceCount) _readings.shift()
+      if (_readings.length === _config.debounceCount && _readings.every(r => r === _readings[0]) && _readings[0] !== _lastConfirmed) {
+        _lastConfirmed = _readings[0]
+        if (_onStatusChange) _onStatusChange(_readings[0])
+      }
+    } catch (e) { console.warn('[PixelMonitor] tick error:', e.message) } finally { _ticking = false }
+  }
+
+  return {
+    start(config, onStatusChange) {
+      if (_timer) { clearInterval(_timer); _timer = null }
+      _readings = []; _lastConfirmed = null
+      _config = config; _onStatusChange = onStatusChange
+      _tick()
+      _timer = setInterval(_tick, config.intervalMs)
+    },
+    stop() { if (_timer) { clearInterval(_timer); _timer = null }; _readings = []; _lastConfirmed = null },
+    async sampleRegion(region) { return _captureRegionAvgColor(region) }
+  }
+})()
 
 // ── Persistent store ─────────────────────────────────────────────────────────
 const store = new Store({
@@ -524,13 +580,20 @@ ipcMain.handle('pixelMonitor:calibrate', async (_, { state }) => {
   const pm = store.get('pixelMonitor')
   if (!pm.region) return { ok: false, error: 'No region selected' }
   try {
+    // Hide the window so it doesn't appear in the capture
+    mainWindow.minimize()
+    await new Promise(r => setTimeout(r, 400))
     const color = await pixelMonitor.sampleRegion(pm.region)
+    mainWindow.restore()
+    mainWindow.focus()
     if (!color) return { ok: false, error: 'Capture returned no pixels' }
     const calibration = { ...pm.calibration, [state]: color }
     store.set('pixelMonitor', { ...pm, calibration })
     syncPixelMonitor()
     return { ok: true, color }
   } catch (e) {
+    mainWindow.restore()
+    mainWindow.focus()
     return { ok: false, error: e.message }
   }
 })
