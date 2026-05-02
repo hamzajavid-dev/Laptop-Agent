@@ -16,6 +16,8 @@ export default function MainLayout() {
   const [showCategories, setShowCategories] = useState(false)
   const [supabaseConnected, setSupabaseConnected] = useState(null)
   const [toast, setToast] = useState(null)
+  const [callStatus, setCallStatus] = useState('idle')
+  const [pixelMonitorEnabled, setPixelMonitorEnabled] = useState(false)
 
   const showToast = useCallback((message, type = 'ok') => {
     setToast({ message, type })
@@ -25,6 +27,8 @@ export default function MainLayout() {
   useEffect(() => {
     window.api.getButtons().then(setButtons)
     window.api.getCategories().then(setCategories)
+    window.api.getPixelMonitorConfig().then(c => { if (c) setPixelMonitorEnabled(c.enabled) })
+    window.api.getPixelMonitorStatus().then(d => { if (d) setCallStatus(d.status) })
   }, [])
 
   useEffect(() => {
@@ -36,7 +40,8 @@ export default function MainLayout() {
         else if (data.error) showToast('Supabase: ' + data.error, 'error')
       }),
       window.api.onCommandIncoming((data) => showToast(`Incoming: ${data.buttonName || data.buttonId}`, 'info')),
-      window.api.onCommandResult((data) => data.status === 'done' ? showToast('Command executed', 'ok') : showToast('Execute failed: ' + (data.error || 'unknown'), 'error'))
+      window.api.onCommandResult((data) => data.status === 'done' ? showToast('Command executed', 'ok') : showToast('Execute failed: ' + (data.error || 'unknown'), 'error')),
+      window.api.onPixelMonitorStatus((d) => { setCallStatus(d.status) })
     ]
     return () => cleanups.forEach(fn => fn())
   }, [showToast])
@@ -77,7 +82,7 @@ export default function MainLayout() {
 
   return (
     <div className="flex flex-col h-full bg-slate-950 relative">
-      <TitleBar onSettings={() => setShowSettings(true)} supabaseConnected={supabaseConnected} />
+      <TitleBar onSettings={() => setShowSettings(true)} supabaseConnected={supabaseConnected} callStatus={callStatus} pixelMonitorEnabled={pixelMonitorEnabled} />
       <div className="flex flex-1 min-h-0">
         <ButtonList
           buttons={buttons}
