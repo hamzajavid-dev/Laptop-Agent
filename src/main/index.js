@@ -440,6 +440,8 @@ ipcMain.handle('buttons:delete', async (_, id) => {
     console.warn('[Supabase] not connected — deletion is local only')
     mainWindow?.webContents.send('supabase:status', { connected: false, error: 'Not connected to Supabase' })
   } else {
+    // Null out FK references in commands first to avoid constraint violations
+    await supabase.from('commands').update({ button_id: null }).eq('button_id', id)
     const { error } = await supabase.from('buttons').delete().eq('id', id)
     if (error) {
       console.error('[Supabase] delete error:', error.message)
