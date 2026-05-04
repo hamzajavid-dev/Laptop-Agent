@@ -182,8 +182,16 @@ async function initSupabase() {
 
   try {
     supabase = createClient(supabaseUrl, supabaseKey)
-    if (agentId) await pullFromSupabase(agentId)
-    if (agentId) startRealtimeListener(agentId)
+    if (agentId) {
+      try {
+        await pullFromSupabase(agentId)
+      } catch (pullErr) {
+        console.warn('[Supabase] initial pull failed (will retry via realtime):', pullErr.message)
+      }
+      startRealtimeListener(agentId)
+      // Retry pull after 5s in case of transient startup failure
+      setTimeout(() => { if (supabase && agentId) pullFromSupabase(agentId).catch(() => {}) }, 5000)
+    }
     mainWindow?.webContents.send('supabase:status', { connected: true })
     syncPixelMonitor()
   } catch (e) {
@@ -200,7 +208,7 @@ async function pullFromSupabase(agentId) {
     .eq('agent_id', agentId)
     .order('order', { ascending: true })
 
-  if (bErr) { console.error('[Supabase] pull buttons error:', bErr.message); return }
+  if (bErr) throw new Error(bErr.message)
 
   const { data: categories, error: cErr } = await supabase
     .from('categories')
@@ -208,7 +216,7 @@ async function pullFromSupabase(agentId) {
     .eq('agent_id', agentId)
     .order('order', { ascending: true })
 
-  if (cErr) { console.error('[Supabase] pull categories error:', cErr.message); return }
+  if (cErr) throw new Error(cErr.message)
 
   const mapped = (buttons ?? []).map(b => ({
     id: b.id,
