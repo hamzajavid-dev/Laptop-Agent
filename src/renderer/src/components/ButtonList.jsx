@@ -1,31 +1,31 @@
-import { Plus, Pencil, Trash2, MapPin, Play, GripVertical, FolderKanban, ArrowUp, ArrowDown } from 'lucide-react'
-
+import { Plus, Pencil, Trash2, MapPin, Play, GripVertical, FolderKanban, ArrowUp, ArrowDown, PhoneOff } from 'lucide-react'
 
 export default function ButtonList({ buttons, categories, editingId, onNew, onManageCategories, onEdit, onDelete, onExecute, onMove, showDisposition }) {
-  const visibleButtons = showDisposition
-    ? buttons.filter(b => (b.category || '').toLowerCase() === 'disposition')
-    : buttons.filter(b => (b.category || '').toLowerCase() !== 'disposition')
+  if (showDisposition) {
+    const dispositionButtons = buttons.filter(b => (b.category || '').toLowerCase() === 'disposition')
+    return <DispositionPage buttons={dispositionButtons} onExecute={onExecute} />
+  }
+
+  const visibleButtons = buttons.filter(b => (b.category || '').toLowerCase() !== 'disposition')
   const grouped = groupButtons(visibleButtons, categories)
 
   return (
     <aside className="w-80 flex flex-col bg-slate-900 border-r border-slate-800 flex-shrink-0">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-200">{showDisposition ? 'Disposition' : 'Buttons'}</span>
+          <span className="text-sm font-semibold text-slate-200">Buttons</span>
           {visibleButtons.length > 0 && <span className="text-xs bg-slate-700 text-slate-400 rounded-full px-2 py-0.5">{visibleButtons.length}</span>}
         </div>
-        {!showDisposition && (
-          <div className="flex items-center gap-2">
-            <button onClick={onManageCategories} className="text-xs px-2.5 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1">
-              <FolderKanban size={13} />
-              Categories
-            </button>
-            <button onClick={onNew} className="flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-md px-2.5 py-1.5 transition-colors">
-              <Plus size={13} />
-              New
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <button onClick={onManageCategories} className="text-xs px-2.5 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1">
+            <FolderKanban size={13} />
+            Categories
+          </button>
+          <button onClick={onNew} className="flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-md px-2.5 py-1.5 transition-colors">
+            <Plus size={13} />
+            New
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-3">
@@ -56,6 +56,42 @@ export default function ButtonList({ buttons, categories, editingId, onNew, onMa
                 ))}
               </div>
             </section>
+          ))
+        )}
+      </div>
+    </aside>
+  )
+}
+
+function DispositionPage({ buttons, onExecute }) {
+  return (
+    <aside className="w-80 flex flex-col bg-slate-900 border-r border-slate-800 flex-shrink-0">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800">
+        <PhoneOff size={14} className="text-rose-400" />
+        <span className="text-sm font-semibold text-rose-300">Select Disposition</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-3 px-3 space-y-2">
+        {buttons.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-center px-4">
+            <p className="text-slate-600 text-xs">No disposition buttons configured.</p>
+          </div>
+        ) : (
+          buttons.map(btn => (
+            <button
+              key={btn.id}
+              onClick={() => onExecute(btn.id)}
+              className="w-full text-left px-4 py-3 rounded-lg bg-slate-800 border border-slate-700 hover:bg-rose-900/30 hover:border-rose-700/50 transition-all"
+            >
+              <div className="flex items-center gap-3">
+                {btn.color && <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: btn.color }} />}
+                <span className="text-sm font-medium text-slate-200">{btn.name || 'Unnamed'}</span>
+              </div>
+              {btn.coordinates
+                ? <p className="text-xs text-slate-500 mt-1 font-mono ml-5">X: {btn.coordinates.x} Y: {btn.coordinates.y}</p>
+                : <p className="text-xs text-slate-700 mt-1 italic ml-5">No coordinates</p>
+              }
+            </button>
           ))
         )}
       </div>
