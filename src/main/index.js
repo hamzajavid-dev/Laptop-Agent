@@ -425,6 +425,39 @@ ipcMain.handle('settings:test', async (_, { supabaseUrl, supabaseKey }) => {
   }
 })
 
+// ── Debounced batch sync ──────────────────────────────────────────────────────
+let _syncTimer = null
+function scheduleBatchSync() {
+  if (_syncTimer) clearTimeout(_syncTimer)
+  _syncTimer = setTimeout(async () => {
+    _syncTimer = null
+    if (!supabase) return
+    const { agentId } = store.get('settings') || {}
+    if (!agentId) return
+    const buttons = store.get('buttons') || []
+    const rows = buttons.map(b => ({
+      id: b.id,
+      agent_id: agentId,
+      name: b.name,
+      category: b.category || '',
+      coordinates: b.coordinates || null,
+      active: b.active ?? true,
+      order: b.order ?? 0,
+      color: b.color || null,
+      created_at: b.createdAt,
+      updated_at: new Date().toISOString()
+    }))
+    if (rows.length === 0) return
+    const { error } = await supabase.from('buttons').upsert(rows)
+    if (error) {
+      console.error('[Supabase] batch sync error:', error.message)
+      mainWindow?.webContents.send('supabase:status', { connected: false, error: 'Sync failed: ' + error.message })
+    } else {
+      console.log(`[Supabase] batch synced ${rows.length} buttons`)
+    }
+  }, 1500)
+}
+
 // ── Button CRUD ───────────────────────────────────────────────────────────────
 ipcMain.handle('buttons:getAll', () => store.get('buttons'))
 
@@ -447,33 +480,8 @@ ipcMain.handle('buttons:save', async (_, button) => {
 
   if (!supabase) {
     console.warn('[Supabase] not connected — button saved locally only')
-    mainWindow?.webContents.send('supabase:status', { connected: false, error: 'Not connected to Supabase' })
   } else {
-    const { agentId } = store.get('settings')
-    if (!agentId) {
-      console.warn('[Supabase] agentId is empty — skipping sync')
-      mainWindow?.webContents.send('supabase:status', { connected: false, error: 'Agent ID is not set in Settings' })
-    } else {
-      const row = {
-        id: saved.id,
-        agent_id: agentId,
-        name: saved.name,
-        category: saved.category || '',
-        coordinates: saved.coordinates || null,
-        active: saved.active ?? true,
-        order: saved.order ?? 0,
-        created_at: saved.createdAt,
-        updated_at: new Date().toISOString()
-      }
-      if (saved.color) row.color = saved.color
-      const { error } = await supabase.from('buttons').upsert(row)
-      if (error) {
-        console.error('[Supabase] save error:', error.message)
-        mainWindow?.webContents.send('supabase:status', { connected: false, error: 'Button sync failed: ' + error.message })
-      } else {
-        console.log('[Supabase] button synced:', saved.id)
-      }
-    }
+    scheduleBatchSync()
   }
 
   return store.get('buttons')
