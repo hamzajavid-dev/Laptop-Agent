@@ -33,7 +33,7 @@ alter table public.buttons add column if not exists color text;
 create table if not exists public.commands (
   id           uuid primary key default gen_random_uuid(),
   agent_id     text not null,
-  button_id    uuid references public.buttons(id),
+  button_id    uuid references public.buttons(id) on delete set null on update cascade,
   button_name  text,
   status       text default 'pending',   -- pending | done | error
   requested_by text,
@@ -45,6 +45,13 @@ create table if not exists public.commands (
 -- Add missing columns to commands if it already exists
 alter table public.commands add column if not exists requested_by text;
 alter table public.commands add column if not exists error_message text;
+
+-- Fix foreign key on existing commands table to allow button deletion/update
+alter table public.commands drop constraint if exists commands_button_id_fkey;
+alter table public.commands
+  add constraint commands_button_id_fkey
+  foreign key (button_id) references public.buttons(id)
+  on delete set null on update cascade;
 
 -- Enable Realtime for buttons, categories and commands
 do $$
