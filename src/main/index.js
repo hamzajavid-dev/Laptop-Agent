@@ -93,21 +93,67 @@ let currentCallStatus = 'idle'
 const isDev = process.env.NODE_ENV !== 'production'
 const rendererUrl = process.env['ELECTRON_RENDERER_URL']
 
-// ── Execution engine (PowerShell — no native deps needed) ───────────────────
-function clickAt(x, y) {
-  const script = [
-    'Add-Type -AssemblyName System.Windows.Forms',
-    `[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x}, ${y})`,
-    "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name 'Input' -Namespace 'Win32'",
-    '[Win32.Input]::mouse_event(0x0002,0,0,0,0)',
-    '[Win32.Input]::mouse_event(0x0004,0,0,0,0)'
-  ].join('; ')
+// ── Execution engine (persistent PowerShell — low-latency clicks) ────────────
+const { spawn } = require('child_process')
 
+// Pending resolvers keyed by tag
+const _psCallbacks = new Map()
+let _psProc = null
+let _psReady = false
+let _psDeferred = []  // commands queued before READY
+let _clickSeq = 0
+
+const PS_INIT = [
+  'Add-Type -AssemblyName System.Windows.Forms',
+  "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name U32 -Namespace Win32",
+  'function Click($x,$y){[System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y);[Win32.U32]::mouse_event(2,0,0,0,0);[Win32.U32]::mouse_event(4,0,0,0,0)}',
+  'Write-Host "##READY##"'
+].join('; ')
+
+function ensurePsProc() {
+  if (_psProc && !_psProc.killed) return _psProc
+  _psReady = false
+  _psDeferred = []
+  _psCallbacks.clear()
+  _psProc = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', '-'], { stdio: ['pipe', 'pipe', 'pipe'] })
+  let _buf = ''
+  _psProc.stdout.on('data', (chunk) => {
+    _buf += chunk.toString()
+    const lines = _buf.split('\n')
+    _buf = lines.pop()
+    for (const line of lines) {
+      const t = line.trim()
+      if (t === '##READY##' && !_psReady) {
+        _psReady = true
+        const cmds = _psDeferred.splice(0)
+        for (const cmd of cmds) _psProc.stdin.write(cmd)
+      } else if (t.startsWith('##DONE:')) {
+        const tag = t.slice(7, -2)
+        _psCallbacks.get(tag)?.resolve()
+        _psCallbacks.delete(tag)
+      }
+    }
+  })
+  _psProc.stderr.on('data', (chunk) => {
+    const msg = chunk.toString().trim()
+    // Reject any pending callbacks on error output
+    for (const [tag, cb] of _psCallbacks) { cb.reject(new Error(msg)); _psCallbacks.delete(tag) }
+  })
+  _psProc.on('exit', () => { _psProc = null; _psReady = false })
+  _psProc.stdin.write(PS_INIT + '\n')
+  return _psProc
+}
+
+function warmPsProc() { ensurePsProc() }
+
+function clickAt(x, y) {
   return new Promise((resolve, reject) => {
-    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], (err) => {
-      if (err) reject(new Error('Click failed: ' + err.message))
-      else resolve()
-    })
+    const tag = String(++_clickSeq)
+    _psCallbacks.set(tag, { resolve, reject })
+    const cmd = `Click ${x} ${y}; Write-Host "##DONE:${tag}##"\n`
+    ensurePsProc()
+    if (_psReady) _psProc.stdin.write(cmd)
+    else _psDeferred.push(cmd)
   })
 }
 
@@ -345,6 +391,7 @@ function createOverlayWindow() {
 }
 
 app.whenReady().then(async () => {
+  warmPsProc()
   createMainWindow()
   createOverlayWindow()
   await initSupabase()
@@ -353,6 +400,10 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  if (_psProc && !_psProc.killed) _psProc.kill()
 })
 
 // ── Settings IPC ─────────────────────────────────────────────────────────────
