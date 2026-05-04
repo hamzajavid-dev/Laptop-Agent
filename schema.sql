@@ -28,6 +28,7 @@ create table if not exists public.buttons (
 -- Migrations for existing tables
 alter table public.buttons add column if not exists "order" integer default 0;
 alter table public.buttons add column if not exists color text;
+alter table public.buttons add column if not exists type text default 'call_control';
 
 -- Commands (dashboard inserts a row here to trigger a remote click)
 create table if not exists public.commands (
