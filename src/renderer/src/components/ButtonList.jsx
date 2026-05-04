@@ -1,26 +1,31 @@
 import { Plus, Pencil, Trash2, MapPin, Play, GripVertical, FolderKanban, ArrowUp, ArrowDown } from 'lucide-react'
 
 
-export default function ButtonList({ buttons, categories, editingId, onNew, onManageCategories, onEdit, onDelete, onExecute, onMove }) {
-  const grouped = groupButtons(buttons, categories)
+export default function ButtonList({ buttons, categories, editingId, onNew, onManageCategories, onEdit, onDelete, onExecute, onMove, showDisposition }) {
+  const visibleButtons = showDisposition
+    ? buttons.filter(b => (b.category || '').toLowerCase() === 'disposition')
+    : buttons.filter(b => (b.category || '').toLowerCase() !== 'disposition')
+  const grouped = groupButtons(visibleButtons, categories)
 
   return (
     <aside className="w-80 flex flex-col bg-slate-900 border-r border-slate-800 flex-shrink-0">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-200">Buttons</span>
-          {buttons.length > 0 && <span className="text-xs bg-slate-700 text-slate-400 rounded-full px-2 py-0.5">{buttons.length}</span>}
+          <span className="text-sm font-semibold text-slate-200">{showDisposition ? 'Disposition' : 'Buttons'}</span>
+          {visibleButtons.length > 0 && <span className="text-xs bg-slate-700 text-slate-400 rounded-full px-2 py-0.5">{visibleButtons.length}</span>}
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={onManageCategories} className="text-xs px-2.5 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1">
-            <FolderKanban size={13} />
-            Categories
-          </button>
-          <button onClick={onNew} className="flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-md px-2.5 py-1.5 transition-colors">
-            <Plus size={13} />
-            New
-          </button>
-        </div>
+        {!showDisposition && (
+          <div className="flex items-center gap-2">
+            <button onClick={onManageCategories} className="text-xs px-2.5 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1">
+              <FolderKanban size={13} />
+              Categories
+            </button>
+            <button onClick={onNew} className="flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-md px-2.5 py-1.5 transition-colors">
+              <Plus size={13} />
+              New
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-3">

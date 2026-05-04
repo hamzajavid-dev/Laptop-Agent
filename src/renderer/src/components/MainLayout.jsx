@@ -72,12 +72,29 @@ export default function MainLayout() {
     setButtons(updated)
   }
 
+  const [showDisposition, setShowDisposition] = useState(false)
+
   const handleExecute = async (buttonId) => {
     const btn = buttons.find(b => b.id === buttonId)
+    const isHungUp = (btn?.category || '').toLowerCase().includes('hung up') || (btn?.category || '').toLowerCase().includes('hang up')
+    const isDisposition = (btn?.category || '').toLowerCase() === 'disposition'
+
+    if (isDisposition) {
+      showToast(`Clicking: ${btn?.name || ''}`, 'info')
+      const r1 = await window.api.executeButton(buttonId)
+      const r2 = await window.api.executeButton(buttonId)
+      if (r1.ok && r2.ok) showToast(`Clicked: ${btn?.name || ''}`, 'ok')
+      else showToast('Click failed: ' + (r1.error || r2.error), 'error')
+      setShowDisposition(false)
+      return
+    }
+
     showToast(`Clicking: ${btn?.name || ''}`, 'info')
     const result = await window.api.executeButton(buttonId)
     if (result.ok) showToast(`Clicked: ${btn?.name || ''}`, 'ok')
     else showToast('Click failed: ' + result.error, 'error')
+
+    if (isHungUp) setShowDisposition(true)
   }
 
   return (
@@ -94,6 +111,7 @@ export default function MainLayout() {
           onDelete={handleDelete}
           onExecute={handleExecute}
           onMove={handleMove}
+          showDisposition={showDisposition}
         />
 
         <main className="flex-1 min-h-0 bg-slate-950 relative">
