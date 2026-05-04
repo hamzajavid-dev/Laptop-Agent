@@ -6,15 +6,14 @@ export default function ButtonList({ buttons, categories, editingId, onNew, onMa
     return <DispositionPage buttons={dispositionButtons} onExecute={onExecute} />
   }
 
-  const visibleButtons = buttons.filter(b => (b.category || '').toLowerCase() !== 'disposition')
-  const grouped = groupButtons(visibleButtons, categories)
+  const grouped = groupButtons(buttons, categories)
 
   return (
     <aside className="w-80 flex flex-col bg-slate-900 border-r border-slate-800 flex-shrink-0">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-200">Buttons</span>
-          {visibleButtons.length > 0 && <span className="text-xs bg-slate-700 text-slate-400 rounded-full px-2 py-0.5">{visibleButtons.length}</span>}
+          {buttons.length > 0 && <span className="text-xs bg-slate-700 text-slate-400 rounded-full px-2 py-0.5">{buttons.length}</span>}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={onManageCategories} className="text-xs px-2.5 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1">
