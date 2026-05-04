@@ -41,7 +41,8 @@ export default function MainLayout() {
       }),
       window.api.onCommandIncoming((data) => showToast(`Incoming: ${data.buttonName || data.buttonId}`, 'info')),
       window.api.onCommandResult((data) => data.status === 'done' ? showToast('Command executed', 'ok') : showToast('Execute failed: ' + (data.error || 'unknown'), 'error')),
-      window.api.onPixelMonitorStatus((d) => { setCallStatus(d.status) })
+      window.api.onPixelMonitorStatus((d) => { setCallStatus(d.status) }),
+      window.api.onButtonsSynced((d) => { setButtons(d.buttons); setCategories(d.categories) })
     ]
     return () => cleanups.forEach(fn => fn())
   }, [showToast])

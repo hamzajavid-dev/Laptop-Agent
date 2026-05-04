@@ -136,7 +136,7 @@ async function initSupabase() {
 
   try {
     supabase = createClient(supabaseUrl, supabaseKey)
-    await pushAllButtonsToSupabase()
+    if (agentId) await pullFromSupabase(agentId)
     if (agentId) startRealtimeListener(agentId)
     mainWindow?.webContents.send('supabase:status', { connected: true })
     syncPixelMonitor()
@@ -147,42 +147,39 @@ async function initSupabase() {
   }
 }
 
-async function pushAllButtonsToSupabase() {
-  if (!supabase) return
-  const { agentId } = store.get('settings')
-  const buttons = store.get('buttons')
-  const categories = store.get('categories')
+async function pullFromSupabase(agentId) {
+  const { data: buttons, error: bErr } = await supabase
+    .from('buttons')
+    .select('*')
+    .eq('agent_id', agentId)
+    .order('order', { ascending: true })
 
-  if (buttons.length) {
-    const rows = buttons.map(b => {
-      const row = {
-        id: b.id,
-        agent_id: agentId,
-        name: b.name,
-        category: b.category || '',
-        coordinates: b.coordinates || null,
-        active: b.active ?? true,
-        order: b.order ?? 0,
-        created_at: b.createdAt || new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-      if (b.color) row.color = b.color
-      return row
-    })
-    const { error } = await supabase.from('buttons').upsert(rows)
-    if (error) console.error('[Supabase] bulk button sync error:', error.message)
-  }
+  if (bErr) { console.error('[Supabase] pull buttons error:', bErr.message); return }
 
-  if (categories.length) {
-    const rows = categories.map(c => ({
-      id: c.id,
-      agent_id: agentId,
-      name: c.name,
-      order: c.order ?? 0
-    }))
-    const { error } = await supabase.from('categories').upsert(rows)
-    if (error) console.error('[Supabase] bulk category sync error:', error.message)
-  }
+  const { data: categories, error: cErr } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('agent_id', agentId)
+    .order('order', { ascending: true })
+
+  if (cErr) { console.error('[Supabase] pull categories error:', cErr.message); return }
+
+  const mapped = (buttons ?? []).map(b => ({
+    id: b.id,
+    name: b.name,
+    category: b.category || '',
+    coordinates: b.coordinates || null,
+    active: b.active ?? true,
+    order: b.order ?? 0,
+    color: b.color || null,
+    createdAt: b.created_at
+  }))
+
+  store.set('buttons', mapped)
+  store.set('categories', categories ?? [])
+
+  console.log(`[Supabase] pulled ${mapped.length} buttons, ${(categories ?? []).length} categories`)
+  mainWindow?.webContents.send('buttons:synced', { buttons: mapped, categories: categories ?? [] })
 }
 
 async function pushCallStatusToSupabase(status) {

@@ -42,6 +42,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('supabase:status', h)
     return () => ipcRenderer.off('supabase:status', h)
   },
+  onButtonsSynced: (cb) => {
+    const h = (_, d) => cb(d)
+    ipcRenderer.on('buttons:synced', h)
+    return () => ipcRenderer.off('buttons:synced', h)
+  },
   onCommandIncoming: (cb) => {
     const h = (_, d) => cb(d)
     ipcRenderer.on('command:incoming', h)
