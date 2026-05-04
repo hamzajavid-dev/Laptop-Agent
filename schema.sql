@@ -19,12 +19,15 @@ create table if not exists public.buttons (
   type         text default 'call_control',
   coordinates  jsonb,
   active       boolean default true,
+  "order"      integer default 0,
+  color        text,
   created_at   timestamptz default now(),
   updated_at   timestamptz default now()
 );
 
--- Add missing 'order' column to buttons if it already exists
+-- Migrations for existing tables
 alter table public.buttons add column if not exists "order" integer default 0;
+alter table public.buttons add column if not exists color text;
 
 -- Commands (dashboard inserts a row here to trigger a remote click)
 create table if not exists public.commands (
