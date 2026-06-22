@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const SAMPLE_RATE = 16000  // 16kHz — standard for voice
-const BUFFER_SIZE = 2048   // ~128ms per chunk at 16kHz
+const BUFFER_SIZE = 1024   // ~64ms per chunk at 16kHz (low latency; ~16 msgs/s per channel)
 
 function encodeChunk(float32) {
   const int16 = new Int16Array(float32.length)
