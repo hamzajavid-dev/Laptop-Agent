@@ -370,13 +370,14 @@ function createMainWindow() {
     }
   })
 
-  // Grant microphone/media access so getUserMedia works for VB-Cable capture
+  // Grant all media/audio permissions — Electron 28+ (Chromium 120) uses
+  // 'microphone' in addition to 'media' depending on the internal code path.
+  const MEDIA_PERMISSIONS = new Set(['media', 'microphone', 'camera', 'audioCapture'])
   mainWindow.webContents.session.setPermissionRequestHandler((_, permission, callback) => {
-    callback(permission === 'media')
+    callback(MEDIA_PERMISSIONS.has(permission))
   })
   mainWindow.webContents.session.setPermissionCheckHandler((_, permission) => {
-    if (permission === 'media') return true
-    return null
+    return MEDIA_PERMISSIONS.has(permission) ? true : null
   })
 
   mainWindow.once('ready-to-show', () => mainWindow.show())

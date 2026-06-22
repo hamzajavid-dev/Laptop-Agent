@@ -26,7 +26,7 @@ export default function AudioStreamer({ onStatusChange }) {
     let audioCtx = null
     let capturedStreams = []
 
-    function report(s) { if (!destroyed) cbRef.current(s) }
+    function report(s, detail = '') { if (!destroyed) cbRef.current(s, detail) }
 
     function stopAll() {
       capturedStreams.forEach(s => s.getTracks().forEach(t => t.stop()))
@@ -34,8 +34,15 @@ export default function AudioStreamer({ onStatusChange }) {
       if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null }
     }
 
+    let lastCaptureError = ''
+
     async function captureDevice(deviceId) {
       if (!deviceId) return null
+      if (!navigator.mediaDevices?.getUserMedia) {
+        lastCaptureError = 'navigator.mediaDevices unavailable (check Electron secure context)'
+        console.error('[AudioStreamer]', lastCaptureError)
+        return null
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -48,7 +55,8 @@ export default function AudioStreamer({ onStatusChange }) {
         console.log('[AudioStreamer] captured device:', deviceId)
         return stream
       } catch (e) {
-        console.error('[AudioStreamer] getUserMedia failed for', deviceId, '-', e.name, e.message)
+        lastCaptureError = `${e.name}: ${e.message}`
+        console.error('[AudioStreamer] getUserMedia failed for', deviceId, '-', lastCaptureError)
         return null
       }
     }
@@ -57,14 +65,16 @@ export default function AudioStreamer({ onStatusChange }) {
       stopAll()
       if (destroyed) return
       report('connecting')
+      lastCaptureError = ''
 
       const s1 = await captureDevice(cfg.channel1DeviceId)
       const s2 = await captureDevice(cfg.channel2DeviceId)
       const streams = [s1, s2].filter(Boolean)
 
       if (streams.length === 0) {
-        console.error('[AudioStreamer] No devices captured — check Settings > Audio Streaming > Scan Devices')
-        report('error')
+        const detail = lastCaptureError || 'No audio devices could be captured'
+        console.error('[AudioStreamer]', detail)
+        report('error', detail)
         return
       }
       if (destroyed) { streams.forEach(s => s.getTracks().forEach(t => t.stop())); return }
@@ -130,7 +140,7 @@ export default function AudioStreamer({ onStatusChange }) {
         if (status === 'SUBSCRIBED' && !destroyed) {
           await startStreaming(audioCfg, ch)
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          if (!destroyed) report('error')
+          if (!destroyed) report('error', `Supabase channel ${status.toLowerCase().replace('_', ' ')}`)
         }
       })
     }

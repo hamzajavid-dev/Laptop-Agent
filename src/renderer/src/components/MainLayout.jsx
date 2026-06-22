@@ -20,6 +20,7 @@ export default function MainLayout() {
   const [callStatus, setCallStatus] = useState('idle')
   const [pixelMonitorEnabled, setPixelMonitorEnabled] = useState(false)
   const [audioStatus, setAudioStatus] = useState('idle')
+  const [audioError, setAudioError] = useState('')
   const [audioSavedAt, setAudioSavedAt] = useState(0)
 
   const showToast = useCallback((message, type = 'ok') => {
@@ -103,7 +104,7 @@ export default function MainLayout() {
 
   return (
     <div className="flex flex-col h-full bg-slate-950 relative">
-      <AudioStreamer key={audioSavedAt} onStatusChange={setAudioStatus} />
+      <AudioStreamer key={audioSavedAt} onStatusChange={(s, detail) => { setAudioStatus(s); setAudioError(detail || '') }} />
       <TitleBar onSettings={() => setShowSettings(true)} supabaseConnected={supabaseConnected} callStatus={callStatus} pixelMonitorEnabled={pixelMonitorEnabled} />
       <div className="flex flex-1 min-h-0">
         <ButtonList
@@ -131,7 +132,7 @@ export default function MainLayout() {
         </main>
       </div>
 
-      {showSettings && <Settings onClose={() => setShowSettings(false)} audioStatus={audioStatus} onAudioSave={() => setAudioSavedAt(Date.now())} />}
+      {showSettings && <Settings onClose={() => setShowSettings(false)} audioStatus={audioStatus} audioError={audioError} onAudioSave={() => setAudioSavedAt(Date.now())} />}
       {showCategories && <CategoriesPanel categories={categories} onChange={setCategories} onClose={() => setShowCategories(false)} />}
     </div>
   )

@@ -16,7 +16,7 @@ const STATES = [
 const AUDIO_STATUS_LABEL = { idle: 'Offline', connecting: 'Connecting…', streaming: 'Streaming', error: 'Error' }
 const AUDIO_STATUS_COLOR = { idle: 'text-slate-500', connecting: 'text-amber-400', streaming: 'text-emerald-400', error: 'text-rose-400' }
 
-export default function Settings({ onClose, audioStatus = 'idle', onAudioSave }) {
+export default function Settings({ onClose, audioStatus = 'idle', audioError = '', onAudioSave }) {
   const [form, setForm] = useState({ supabaseUrl: '', supabaseKey: '', agentId: '' })
   const [showKey, setShowKey] = useState(false)
   const [testState, setTestState] = useState(null)
@@ -288,10 +288,12 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
               </div>
               <span className="text-sm font-semibold text-slate-200">Audio Streaming</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-0.5">
               <span className={`text-xs font-medium ${AUDIO_STATUS_COLOR[audioStatus] || 'text-slate-500'}`}>
                 {AUDIO_STATUS_LABEL[audioStatus] || audioStatus}
               </span>
+              {audioError && <span className="text-[10px] text-rose-400 max-w-[180px] text-right truncate" title={audioError}>{audioError}</span>}
+            </div>
               <button
                 onClick={() => setAudio(a => ({ ...a, enabled: !a.enabled }))}
                 className={`relative w-10 h-5 rounded-full transition-colors ${audio.enabled ? 'bg-emerald-600' : 'bg-slate-700'}`}
