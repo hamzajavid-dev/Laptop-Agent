@@ -75,6 +75,13 @@ const store = new Store({
       intervalMs: 500,
       tolerance: 30,
       calibration: { live_call: null, hung_up: null, idle: null }
+    },
+    audioStreaming: {
+      enabled: false,
+      mode: 'local',
+      vbCableInputDeviceId: '',
+      vbCableOutputDeviceId: '',
+      turnServer: { url: '', username: '', credential: '' }
     }
   }
 })
@@ -693,6 +700,16 @@ ipcMain.handle('capture:cancelRegion', () => {
   overlayWindow.hide()
   pendingRegionCapture = false
   setTimeout(() => { mainWindow.restore(); mainWindow.focus() }, 120)
+})
+
+// ── Audio Streaming IPC ───────────────────────────────────────────────────────
+ipcMain.handle('audioStreaming:getConfig', () => store.get('audioStreaming'))
+
+ipcMain.handle('audioStreaming:saveConfig', (_, patch) => {
+  const current = store.get('audioStreaming')
+  const updated = { ...current, ...patch }
+  store.set('audioStreaming', updated)
+  return updated
 })
 
 // ── Window controls ───────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import ButtonList from './ButtonList'
 import ButtonEditor from './ButtonEditor'
 import Settings from './Settings'
 import CategoriesPanel from './CategoriesPanel'
+import AudioStreamer from './AudioStreamer'
 import { LayoutGrid, CheckCircle2, XCircle, Zap } from 'lucide-react'
 
 const EMPTY_BUTTON = { id: null, name: '', category: '', type: 'call_control', coordinates: null, active: true }
@@ -18,6 +19,8 @@ export default function MainLayout() {
   const [toast, setToast] = useState(null)
   const [callStatus, setCallStatus] = useState('idle')
   const [pixelMonitorEnabled, setPixelMonitorEnabled] = useState(false)
+  const [audioStatus, setAudioStatus] = useState('idle')
+  const [audioSavedAt, setAudioSavedAt] = useState(0)
 
   const showToast = useCallback((message, type = 'ok') => {
     setToast({ message, type })
@@ -100,6 +103,7 @@ export default function MainLayout() {
 
   return (
     <div className="flex flex-col h-full bg-slate-950 relative">
+      <AudioStreamer key={audioSavedAt} onStatusChange={setAudioStatus} />
       <TitleBar onSettings={() => setShowSettings(true)} supabaseConnected={supabaseConnected} callStatus={callStatus} pixelMonitorEnabled={pixelMonitorEnabled} />
       <div className="flex flex-1 min-h-0">
         <ButtonList
@@ -127,7 +131,7 @@ export default function MainLayout() {
         </main>
       </div>
 
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showSettings && <Settings onClose={() => setShowSettings(false)} audioStatus={audioStatus} onAudioSave={() => setAudioSavedAt(Date.now())} />}
       {showCategories && <CategoriesPanel categories={categories} onChange={setCategories} onClose={() => setShowCategories(false)} />}
     </div>
   )

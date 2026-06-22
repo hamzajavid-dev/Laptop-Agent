@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Radio, RectangleHorizontal } from 'lucide-react'
+import { X, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Radio, RectangleHorizontal, Mic, ScanLine } from 'lucide-react'
 
 const INTERVALS = [
   { label: '500ms', value: 500 },
@@ -13,7 +13,10 @@ const STATES = [
   { key: 'idle',      label: 'Idle',     dot: 'bg-slate-400' }
 ]
 
-export default function Settings({ onClose }) {
+const AUDIO_STATUS_LABEL = { idle: 'Offline', connecting: 'Connecting…', streaming: 'Streaming', error: 'Error' }
+const AUDIO_STATUS_COLOR = { idle: 'text-slate-500', connecting: 'text-amber-400', streaming: 'text-emerald-400', error: 'text-rose-400' }
+
+export default function Settings({ onClose, audioStatus = 'idle', onAudioSave }) {
   const [form, setForm] = useState({ supabaseUrl: '', supabaseKey: '', agentId: '' })
   const [showKey, setShowKey] = useState(false)
   const [testState, setTestState] = useState(null)
@@ -31,9 +34,21 @@ export default function Settings({ onClose }) {
   const [calibrating, setCalibrating] = useState(null) // state key being calibrated
   const [calError, setCalError] = useState('')
 
+  // Audio streaming state
+  const [audio, setAudio] = useState({
+    enabled: false,
+    mode: 'local',
+    vbCableInputDeviceId: '',
+    vbCableOutputDeviceId: '',
+    turnServer: { url: '', username: '', credential: '' }
+  })
+  const [audioDevices, setAudioDevices] = useState([])
+  const [scanningDevices, setScanningDevices] = useState(false)
+
   useEffect(() => {
     window.api.getSettings().then(s => { if (s) setForm(s) })
     window.api.getPixelMonitorConfig().then(c => { if (c) setPm(c) })
+    window.api.getAudioConfig().then(c => { if (c) setAudio(c) })
   }, [])
 
   useEffect(() => {
@@ -51,6 +66,17 @@ export default function Settings({ onClose }) {
     if (!result.ok) setTestError(result.error || 'Connection failed')
   }
 
+  const handleScanDevices = async () => {
+    setScanningDevices(true)
+    try {
+      // Request mic permission to get device labels
+      await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()))
+    } catch (_) {}
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    setAudioDevices(devices.filter(d => d.kind === 'audioinput'))
+    setScanningDevices(false)
+  }
+
   const handleSave = async () => {
     setSaving(true)
     await window.api.saveSettings(form)
@@ -59,6 +85,8 @@ export default function Settings({ onClose }) {
       intervalMs: pm.intervalMs,
       tolerance: pm.tolerance
     })
+    await window.api.saveAudioConfig(audio)
+    onAudioSave?.()
     setSaving(false)
     onClose()
   }
@@ -243,6 +271,110 @@ export default function Settings({ onClose }) {
             </div>
             {calError && <p className="text-xs text-rose-400 mt-2">{calError}</p>}
           </div>
+        </div>
+
+        {/* Divider */}
+        <div className="mx-6 border-t border-slate-800" />
+
+        {/* Audio Streaming section */}
+        <div className="px-6 py-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                <Mic size={13} className="text-emerald-400" />
+              </div>
+              <span className="text-sm font-semibold text-slate-200">Audio Streaming</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-medium ${AUDIO_STATUS_COLOR[audioStatus] || 'text-slate-500'}`}>
+                {AUDIO_STATUS_LABEL[audioStatus] || audioStatus}
+              </span>
+              <button
+                onClick={() => setAudio(a => ({ ...a, enabled: !a.enabled }))}
+                className={`relative w-10 h-5 rounded-full transition-colors ${audio.enabled ? 'bg-emerald-600' : 'bg-slate-700'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${audio.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500">Stream VB-Cable audio from both legs of the Vicidial call to the supervisor web app in real time.</p>
+
+          {/* Network mode */}
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">Network Mode</label>
+            <div className="flex gap-2">
+              {[{ value: 'local', label: 'Local Network' }, { value: 'remote', label: 'Remote (TURN relay)' }].map(({ value, label }) => (
+                <button key={value} onClick={() => setAudio(a => ({ ...a, mode: value }))}
+                  className={`px-3 py-1 text-xs rounded-lg border transition-colors ${audio.mode === value ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-600 mt-1">
+              {audio.mode === 'local' ? 'Same office/LAN — direct P2P (~30–80ms latency).' : 'Supervisor on different network — uses relay server (~80–200ms).'}
+            </p>
+          </div>
+
+          {/* Device selection */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-slate-400">VB-Cable Devices</label>
+              <button onClick={handleScanDevices} disabled={scanningDevices}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200 disabled:opacity-40 transition-colors">
+                {scanningDevices ? <Loader2 size={11} className="animate-spin" /> : <ScanLine size={11} />}
+                Scan Devices
+              </button>
+            </div>
+
+            {audioDevices.length === 0 && (
+              <p className="text-xs text-slate-600 mb-2">Click "Scan Devices" to list available audio input devices.</p>
+            )}
+
+            {[
+              { key: 'vbCableInputDeviceId', label: 'CSR Voice (VB-Cable Input)', hint: 'The device carrying the CSR\'s outgoing audio into Vicidial' },
+              { key: 'vbCableOutputDeviceId', label: 'Caller Voice (VB-Cable Output)', hint: 'The device carrying the incoming caller audio from Vicidial' }
+            ].map(({ key, label, hint }) => (
+              <div key={key} className="mb-3">
+                <label className="block text-xs text-slate-500 mb-1">{label}</label>
+                <select
+                  value={audio[key]}
+                  onChange={e => setAudio(a => ({ ...a, [key]: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                >
+                  <option value="">— select device —</option>
+                  {audioDevices.map(d => (
+                    <option key={d.deviceId} value={d.deviceId}>{d.label || `Device ${d.deviceId.slice(0, 8)}`}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-600 mt-0.5">{hint}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* TURN server (remote mode only) */}
+          {audio.mode === 'remote' && (
+            <div className="space-y-3 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
+              <p className="text-xs font-medium text-slate-400">TURN Relay Server</p>
+              {[
+                { label: 'Server URL', key: 'url', placeholder: 'turn:relay.example.com:3478' },
+                { label: 'Username', key: 'username', placeholder: 'user' },
+                { label: 'Credential', key: 'credential', placeholder: 'password' }
+              ].map(({ label, key, placeholder }) => (
+                <div key={key}>
+                  <label className="block text-xs text-slate-500 mb-1">{label}</label>
+                  <input
+                    type={key === 'credential' ? 'password' : 'text'}
+                    value={audio.turnServer[key]}
+                    onChange={e => setAudio(a => ({ ...a, turnServer: { ...a.turnServer, [key]: e.target.value } }))}
+                    placeholder={placeholder}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                    spellCheck={false}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

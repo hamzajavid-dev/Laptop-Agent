@@ -85,6 +85,10 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.off('overlay:activateRegion', h)
   },
 
+  // --- Audio Streaming ---
+  getAudioConfig: () => ipcRenderer.invoke('audioStreaming:getConfig'),
+  saveAudioConfig: (patch) => ipcRenderer.invoke('audioStreaming:saveConfig', patch),
+
   // --- Window controls ---
   minimize: () => ipcRenderer.invoke('window:minimize'),
   maximize: () => ipcRenderer.invoke('window:maximize'),
