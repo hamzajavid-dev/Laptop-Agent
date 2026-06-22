@@ -79,8 +79,8 @@ const store = new Store({
     audioStreaming: {
       enabled: false,
       mode: 'local',
-      vbCableInputDeviceId: '',
-      vbCableOutputDeviceId: '',
+      channel1DeviceId: '',  // e.g. CABLE Output — captures caller audio from CABLE Input
+      channel2DeviceId: '',  // optional, e.g. microphone for CSR voice
       turnServer: { url: '', username: '', credential: '' }
     }
   }

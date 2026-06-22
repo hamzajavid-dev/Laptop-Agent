@@ -12,6 +12,9 @@ export default function AudioStreamer({ onStatusChange }) {
     const pcRef = { current: null }
     const streamsRef = { current: [] }
     const reconnectRef = { current: null }
+    // Keep the last-used cfg + ch so we can re-offer on request
+    let lastCfg = null
+    let lastCh = null
 
     function report(s) { if (!destroyed) statusCbRef.current(s) }
 
@@ -34,20 +37,42 @@ export default function AudioStreamer({ onStatusChange }) {
       if (pcRef.current) { pcRef.current.close(); pcRef.current = null }
     }
 
+    async function captureDevice(deviceId) {
+      if (!deviceId) return null
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: { exact: deviceId },
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        })
+      } catch (e) {
+        console.warn('[AudioStreamer] getUserMedia failed for device', deviceId, e.message)
+        return null
+      }
+    }
+
     async function startStreaming(cfg, ch) {
       stopStreams()
       if (destroyed) return
       report('connecting')
 
       try {
-        const audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-        const [s1, s2] = await Promise.all([
-          navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: cfg.vbCableInputDeviceId }, ...audioConstraints } }),
-          navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: cfg.vbCableOutputDeviceId }, ...audioConstraints } })
-        ])
+        // Capture channel 1 (e.g. CABLE Output — captures caller audio from CABLE Input)
+        const s1 = await captureDevice(cfg.channel1DeviceId)
+        // Capture channel 2 (e.g. microphone — CSR voice). Optional.
+        const s2 = await captureDevice(cfg.channel2DeviceId)
 
-        if (destroyed) { [s1, s2].forEach(s => s.getTracks().forEach(t => t.stop())); return }
-        streamsRef.current = [s1, s2]
+        const streams = [s1, s2].filter(Boolean)
+        if (streams.length === 0) {
+          console.error('[AudioStreamer] No audio devices could be captured')
+          report('error')
+          return
+        }
+        if (destroyed) { streams.forEach(s => s.getTracks().forEach(t => t.stop())); return }
+        streamsRef.current = streams
 
         const pc = new RTCPeerConnection({
           iceServers: buildIceServers(cfg),
@@ -57,8 +82,7 @@ export default function AudioStreamer({ onStatusChange }) {
         })
         pcRef.current = pc
 
-        s1.getAudioTracks().forEach(t => pc.addTrack(t, s1))
-        s2.getAudioTracks().forEach(t => pc.addTrack(t, s2))
+        streams.forEach(s => s.getAudioTracks().forEach(t => pc.addTrack(t, s)))
 
         pc.onicecandidate = ({ candidate }) => {
           if (candidate && ch) {
@@ -69,6 +93,7 @@ export default function AudioStreamer({ onStatusChange }) {
         pc.onconnectionstatechange = () => {
           if (destroyed) return
           const state = pc.connectionState
+          console.log('[AudioStreamer] connection state:', state)
           if (state === 'connected') report('streaming')
           else if (state === 'failed' || state === 'closed') {
             report('error')
@@ -80,15 +105,30 @@ export default function AudioStreamer({ onStatusChange }) {
         if (destroyed) { pc.close(); return }
         await pc.setLocalDescription(offer)
 
-        await ch.send({
+        const result = await ch.send({
           type: 'broadcast',
           event: 'webrtc-offer',
           payload: { sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } }
         })
+        console.log('[AudioStreamer] offer sent, result:', result)
       } catch (e) {
-        console.error('[AudioStreamer] start failed:', e)
+        console.error('[AudioStreamer] startStreaming failed:', e)
         if (!destroyed) report('error')
       }
+    }
+
+    async function reoffer(ch) {
+      // Resend existing offer or create a new one — for late-joining web clients
+      if (!pcRef.current || !pcRef.current.localDescription) {
+        if (lastCfg && lastCh) await startStreaming(lastCfg, lastCh)
+        return
+      }
+      console.log('[AudioStreamer] re-sending offer on request')
+      await ch.send({
+        type: 'broadcast',
+        event: 'webrtc-offer',
+        payload: { sdp: { type: pcRef.current.localDescription.type, sdp: pcRef.current.localDescription.sdp } }
+      })
     }
 
     async function init() {
@@ -98,7 +138,8 @@ export default function AudioStreamer({ onStatusChange }) {
       ])
       if (destroyed) return
 
-      if (!audioCfg.enabled || !audioCfg.vbCableInputDeviceId || !audioCfg.vbCableOutputDeviceId) {
+      // Need at least one device configured
+      if (!audioCfg.enabled || (!audioCfg.channel1DeviceId && !audioCfg.channel2DeviceId)) {
         report('idle'); return
       }
       if (!settings.supabaseUrl || !settings.supabaseKey || !settings.agentId) {
@@ -121,8 +162,15 @@ export default function AudioStreamer({ onStatusChange }) {
             pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(() => {})
           }
         })
+        .on('broadcast', { event: 'request-offer' }, () => {
+          // Web app opened or refreshed — resend the offer so they can connect
+          reoffer(ch)
+        })
         .subscribe(async (status) => {
+          console.log('[AudioStreamer] channel status:', status)
           if (status === 'SUBSCRIBED' && !destroyed) {
+            lastCfg = audioCfg
+            lastCh = ch
             await startStreaming(audioCfg, ch)
           }
         })

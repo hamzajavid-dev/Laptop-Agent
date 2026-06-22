@@ -38,8 +38,8 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
   const [audio, setAudio] = useState({
     enabled: false,
     mode: 'local',
-    vbCableInputDeviceId: '',
-    vbCableOutputDeviceId: '',
+    channel1DeviceId: '',
+    channel2DeviceId: '',
     turnServer: { url: '', username: '', credential: '' }
   })
   const [audioDevices, setAudioDevices] = useState([])
@@ -302,11 +302,22 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
           </div>
 
           <p className="text-xs text-slate-500">
-            Stream VB-Cable audio from both legs of the Vicidial call to the supervisor web app in real time.
-            <span className="block mt-1 text-slate-600">
-              Note: "CABLE Input" is a playback device — it won't appear in the list below. Only "CABLE Output" (the recording side) appears. Route Vicidial audio to CABLE Input, then select CABLE Output here to capture it.
-            </span>
+            Stream Vicidial call audio to the supervisor web app in real time.
           </p>
+
+          {/* VB-Cable explanation box */}
+          <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700/40 space-y-1">
+            <p className="text-xs font-medium text-slate-300">How VB-Cable works with this app</p>
+            <p className="text-xs text-slate-500">
+              <span className="text-slate-300">CABLE Input</span> is a virtual speaker (playback device) — it cannot be captured directly and will <span className="text-rose-400">never appear</span> in the list below.
+            </p>
+            <p className="text-xs text-slate-500">
+              <span className="text-slate-300">CABLE Output</span> is a virtual microphone that records everything played to CABLE Input — <span className="text-emerald-400">select this</span> to capture caller audio.
+            </p>
+            <p className="text-xs text-slate-500">
+              For CSR voice, select your <span className="text-slate-300">physical microphone</span>.
+            </p>
+          </div>
 
           {/* Network mode */}
           <div>
@@ -320,14 +331,14 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
               ))}
             </div>
             <p className="text-xs text-slate-600 mt-1">
-              {audio.mode === 'local' ? 'Same office/LAN — direct P2P (~30–80ms latency).' : 'Supervisor on different network — uses relay server (~80–200ms).'}
+              {audio.mode === 'local' ? 'Supervisor on same WiFi/LAN as this laptop — direct P2P, lowest latency.' : 'Supervisor on different network (mobile data, home) — needs TURN relay server.'}
             </p>
           </div>
 
           {/* Device selection */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-medium text-slate-400">VB-Cable Devices</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-slate-400">Audio Devices</label>
               <button onClick={handleScanDevices} disabled={scanningDevices}
                 className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200 disabled:opacity-40 transition-colors">
                 {scanningDevices ? <Loader2 size={11} className="animate-spin" /> : <ScanLine size={11} />}
@@ -336,12 +347,20 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
             </div>
 
             {audioDevices.length === 0 && (
-              <p className="text-xs text-slate-600 mb-2">Click "Scan Devices" to list available audio input devices.</p>
+              <p className="text-xs text-slate-600 mb-2">Click "Scan Devices" — then pick CABLE Output for caller and your microphone for CSR voice.</p>
             )}
 
             {[
-              { key: 'vbCableInputDeviceId', label: 'Channel 1 — CSR Voice', hint: 'Select the microphone or CABLE Output device carrying the CSR\'s voice' },
-              { key: 'vbCableOutputDeviceId', label: 'Channel 2 — Caller Voice', hint: 'Select CABLE Output — the device that captures audio played to CABLE Input by Vicidial' }
+              {
+                key: 'channel1DeviceId',
+                label: 'Channel 1 — Caller Voice',
+                hint: 'Select "CABLE Output" — captures audio Vicidial sends to CABLE Input'
+              },
+              {
+                key: 'channel2DeviceId',
+                label: 'Channel 2 — CSR Voice (optional)',
+                hint: 'Select your microphone to also stream the CSR\'s voice. Leave blank to stream caller only.'
+              }
             ].map(({ key, label, hint }) => (
               <div key={key} className="mb-3">
                 <label className="block text-xs text-slate-500 mb-1">{label}</label>
