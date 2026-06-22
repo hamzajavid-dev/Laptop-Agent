@@ -133,12 +133,15 @@ export default function AudioStreamer({ onStatusChange }) {
 
       console.log('[AudioStreamer] config:', JSON.stringify({ enabled: audioCfg.enabled, ch1: audioCfg.channel1DeviceId?.slice(0,12), ch2: audioCfg.channel2DeviceId?.slice(0,12) }))
 
-      if (!audioCfg.enabled || (!audioCfg.channel1DeviceId && !audioCfg.channel2DeviceId)) {
-        report('idle'); return
+      if (!audioCfg.enabled) {
+        report('idle', 'Turn the toggle ON, then Save'); return
+      }
+      if (!audioCfg.channel1DeviceId && !audioCfg.channel2DeviceId) {
+        report('idle', 'No device selected — pick CABLE Output for Channel 1'); return
       }
       if (!settings.supabaseUrl || !settings.supabaseKey || !settings.agentId) {
         console.error('[AudioStreamer] Missing Supabase settings')
-        report('idle'); return
+        report('idle', 'Missing Supabase URL / Key / Agent ID'); return
       }
 
       supabaseClient = createClient(settings.supabaseUrl, settings.supabaseKey)
