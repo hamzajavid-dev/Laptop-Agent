@@ -49,6 +49,8 @@ export default function Settings({ onClose, audioStatus = 'idle', audioError = '
     window.api.getSettings().then(s => { if (s) setForm(s) })
     window.api.getPixelMonitorConfig().then(c => { if (c) setPm(c) })
     window.api.getAudioConfig().then(c => { if (c) setAudio(c) })
+    // Auto-scan so saved device selections show up immediately on open.
+    scanDevices()
   }, [])
 
   useEffect(() => {
@@ -66,19 +68,22 @@ export default function Settings({ onClose, audioStatus = 'idle', audioError = '
     if (!result.ok) setTestError(result.error || 'Connection failed')
   }
 
-  const handleScanDevices = async () => {
+  const scanDevices = async () => {
     setScanningDevices(true)
     try {
       // Trigger permission prompt so device labels are revealed
       const s = await navigator.mediaDevices.getUserMedia({ audio: true })
       s.getTracks().forEach(t => t.stop())
     } catch (_) {}
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    // Show only audioinput — NOTE: "CABLE Input" is a playback device and won't appear here.
-    // "CABLE Output" is the capturable recording device that receives CABLE Input audio.
-    setAudioDevices(devices.filter(d => d.kind === 'audioinput'))
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      // Show only audioinput — NOTE: "CABLE Input" is a playback device and won't appear here.
+      // "CABLE Output" is the capturable recording device that receives CABLE Input audio.
+      setAudioDevices(devices.filter(d => d.kind === 'audioinput'))
+    } catch (_) {}
     setScanningDevices(false)
   }
+  const handleScanDevices = scanDevices
 
   const handleSave = async () => {
     setSaving(true)
@@ -357,6 +362,9 @@ export default function Settings({ onClose, audioStatus = 'idle', audioError = '
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
                 >
                   <option value="">— select device —</option>
+                  {audio[key] && !audioDevices.some(d => d.deviceId === audio[key]) && (
+                    <option value={audio[key]}>Saved device (click Scan to refresh)</option>
+                  )}
                   {audioDevices.map(d => (
                     <option key={d.deviceId} value={d.deviceId}>{d.label || `Device ${d.deviceId.slice(0, 8)}`}</option>
                   ))}

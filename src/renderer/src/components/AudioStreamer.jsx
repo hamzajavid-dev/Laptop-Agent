@@ -46,7 +46,7 @@ export default function AudioStreamer({ onStatusChange }) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
-            deviceId: { ideal: deviceId },
+            deviceId: { exact: deviceId },
             echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false
@@ -90,6 +90,8 @@ export default function AudioStreamer({ onStatusChange }) {
       sink.gain.value = 0
       sink.connect(audioCtx.destination)
 
+      let sentCount = 0
+      let peak = 0
       streams.forEach((stream, chIndex) => {
         const source = audioCtx.createMediaStreamSource(stream)
         const processor = audioCtx.createScriptProcessor(BUFFER_SIZE, 1, 1)
@@ -97,6 +99,8 @@ export default function AudioStreamer({ onStatusChange }) {
         processor.onaudioprocess = (e) => {
           if (destroyed) return
           const samples = new Float32Array(e.inputBuffer.getChannelData(0))
+          for (let i = 0; i < samples.length; i++) { const a = Math.abs(samples[i]); if (a > peak) peak = a }
+          sentCount++
           ch.send({
             type: 'broadcast',
             event: 'audio-chunk',
@@ -108,8 +112,16 @@ export default function AudioStreamer({ onStatusChange }) {
         processor.connect(sink)
       })
 
+      // Diagnostic: confirms chunks are being produced AND whether they carry signal.
+      // peak ~0 for several seconds = correct device captured but it's silent (no audio on VB-Cable).
+      const diag = setInterval(() => {
+        if (destroyed) { clearInterval(diag); return }
+        console.log(`[AudioStreamer] sent ${sentCount} chunks, peak level ${peak.toFixed(3)} ${peak < 0.001 ? '(SILENT — check the selected device is receiving audio)' : ''}`)
+        sentCount = 0; peak = 0
+      }, 3000)
+
       report('streaming')
-      console.log('[AudioStreamer] streaming', streams.length, 'channel(s) via Supabase Broadcast')
+      console.log('[AudioStreamer] streaming', streams.length, 'channel(s) via Supabase Broadcast on', ch.topic)
     }
 
     async function init() {
