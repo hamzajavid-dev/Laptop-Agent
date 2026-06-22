@@ -302,7 +302,7 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
           </div>
 
           <p className="text-xs text-slate-500">
-            Stream Vicidial call audio to the supervisor web app in real time.
+            Stream Vicidial call audio to the supervisor web app via Supabase — works on any network, no relay server needed.
           </p>
 
           {/* VB-Cable explanation box */}
@@ -316,22 +316,6 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
             </p>
             <p className="text-xs text-slate-500">
               For CSR voice, select your <span className="text-slate-300">physical microphone</span>.
-            </p>
-          </div>
-
-          {/* Network mode */}
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Network Mode</label>
-            <div className="flex gap-2">
-              {[{ value: 'local', label: 'Local Network' }, { value: 'remote', label: 'Remote (TURN relay)' }].map(({ value, label }) => (
-                <button key={value} onClick={() => setAudio(a => ({ ...a, mode: value }))}
-                  className={`px-3 py-1 text-xs rounded-lg border transition-colors ${audio.mode === value ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-slate-600 mt-1">
-              {audio.mode === 'local' ? 'Supervisor on same WiFi/LAN as this laptop — direct P2P, lowest latency.' : 'Supervisor on different network (mobile data, home) — needs TURN relay server.'}
             </p>
           </div>
 
@@ -379,29 +363,6 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
             ))}
           </div>
 
-          {/* TURN server (remote mode only) */}
-          {audio.mode === 'remote' && (
-            <div className="space-y-3 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-              <p className="text-xs font-medium text-slate-400">TURN Relay Server</p>
-              {[
-                { label: 'Server URL', key: 'url', placeholder: 'turn:relay.example.com:3478' },
-                { label: 'Username', key: 'username', placeholder: 'user' },
-                { label: 'Credential', key: 'credential', placeholder: 'password' }
-              ].map(({ label, key, placeholder }) => (
-                <div key={key}>
-                  <label className="block text-xs text-slate-500 mb-1">{label}</label>
-                  <input
-                    type={key === 'credential' ? 'password' : 'text'}
-                    value={audio.turnServer[key]}
-                    onChange={e => setAudio(a => ({ ...a, turnServer: { ...a.turnServer, [key]: e.target.value } }))}
-                    placeholder={placeholder}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
-                    spellCheck={false}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Footer */}
