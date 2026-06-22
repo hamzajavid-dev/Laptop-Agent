@@ -71,6 +71,9 @@ export default function AudioStreamer({ onStatusChange }) {
 
       capturedStreams = streams
       audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE })
+      // Electron may start AudioContext suspended (autoplay policy); resume explicitly
+      // so onaudioprocess fires immediately without needing a user gesture.
+      await audioCtx.resume()
 
       // Silent gain node — keeps audio graph alive without local playback
       const sink = audioCtx.createGain()
