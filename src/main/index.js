@@ -370,6 +370,15 @@ function createMainWindow() {
     }
   })
 
+  // Grant microphone/media access so getUserMedia works for VB-Cable capture
+  mainWindow.webContents.session.setPermissionRequestHandler((_, permission, callback) => {
+    callback(permission === 'media')
+  })
+  mainWindow.webContents.session.setPermissionCheckHandler((_, permission) => {
+    if (permission === 'media') return true
+    return null
+  })
+
   mainWindow.once('ready-to-show', () => mainWindow.show())
 
   if (isDev && rendererUrl) {

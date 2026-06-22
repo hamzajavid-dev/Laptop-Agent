@@ -69,10 +69,13 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
   const handleScanDevices = async () => {
     setScanningDevices(true)
     try {
-      // Request mic permission to get device labels
-      await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()))
+      // Trigger permission prompt so device labels are revealed
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true })
+      s.getTracks().forEach(t => t.stop())
     } catch (_) {}
     const devices = await navigator.mediaDevices.enumerateDevices()
+    // Show only audioinput — NOTE: "CABLE Input" is a playback device and won't appear here.
+    // "CABLE Output" is the capturable recording device that receives CABLE Input audio.
     setAudioDevices(devices.filter(d => d.kind === 'audioinput'))
     setScanningDevices(false)
   }
@@ -298,7 +301,12 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
             </div>
           </div>
 
-          <p className="text-xs text-slate-500">Stream VB-Cable audio from both legs of the Vicidial call to the supervisor web app in real time.</p>
+          <p className="text-xs text-slate-500">
+            Stream VB-Cable audio from both legs of the Vicidial call to the supervisor web app in real time.
+            <span className="block mt-1 text-slate-600">
+              Note: "CABLE Input" is a playback device — it won't appear in the list below. Only "CABLE Output" (the recording side) appears. Route Vicidial audio to CABLE Input, then select CABLE Output here to capture it.
+            </span>
+          </p>
 
           {/* Network mode */}
           <div>
@@ -332,8 +340,8 @@ export default function Settings({ onClose, audioStatus = 'idle', onAudioSave })
             )}
 
             {[
-              { key: 'vbCableInputDeviceId', label: 'CSR Voice (VB-Cable Input)', hint: 'The device carrying the CSR\'s outgoing audio into Vicidial' },
-              { key: 'vbCableOutputDeviceId', label: 'Caller Voice (VB-Cable Output)', hint: 'The device carrying the incoming caller audio from Vicidial' }
+              { key: 'vbCableInputDeviceId', label: 'Channel 1 — CSR Voice', hint: 'Select the microphone or CABLE Output device carrying the CSR\'s voice' },
+              { key: 'vbCableOutputDeviceId', label: 'Channel 2 — Caller Voice', hint: 'Select CABLE Output — the device that captures audio played to CABLE Input by Vicidial' }
             ].map(({ key, label, hint }) => (
               <div key={key} className="mb-3">
                 <label className="block text-xs text-slate-500 mb-1">{label}</label>
