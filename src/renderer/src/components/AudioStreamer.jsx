@@ -48,6 +48,40 @@ export default function AudioStreamer({ onStatusChange }) {
       }
     }
 
+    // Special sentinel: capture the PC's audio output (loopback) instead of a
+    // recording device — used to grab the caller's voice with no extra software.
+    const SYSTEM_AUDIO = '__system__'
+
+    async function captureSystemAudio() {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        lastCaptureError = 'getDisplayMedia unavailable (system audio capture not supported)'
+        console.error('[AudioStreamer]', lastCaptureError)
+        return null
+      }
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+        // We only want the loopback audio — drop the video track immediately.
+        stream.getVideoTracks().forEach(t => { t.stop(); stream.removeTrack(t) })
+        if (stream.getAudioTracks().length === 0) {
+          lastCaptureError = 'System audio capture returned no audio track'
+          console.error('[AudioStreamer]', lastCaptureError)
+          return null
+        }
+        console.log('[AudioStreamer] captured system audio (loopback)')
+        return stream
+      } catch (e) {
+        lastCaptureError = `${e.name}: ${e.message}`
+        console.error('[AudioStreamer] getDisplayMedia failed -', lastCaptureError)
+        return null
+      }
+    }
+
+    function captureChannel(deviceId) {
+      if (!deviceId) return null
+      if (deviceId === SYSTEM_AUDIO) return captureSystemAudio()
+      return captureDevice(deviceId)
+    }
+
     async function captureDevice(deviceId) {
       if (!deviceId) return null
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -77,8 +111,8 @@ export default function AudioStreamer({ onStatusChange }) {
     async function ensureLocalStream(cfg) {
       if (localStream) return localStream
       lastCaptureError = ''
-      const s1 = await captureDevice(cfg.channel1DeviceId)
-      const s2 = await captureDevice(cfg.channel2DeviceId)
+      const s1 = await captureChannel(cfg.channel1DeviceId)
+      const s2 = await captureChannel(cfg.channel2DeviceId)
       const streams = [s1, s2].filter(Boolean)
       if (streams.length === 0) return null
 

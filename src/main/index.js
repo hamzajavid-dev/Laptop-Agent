@@ -380,6 +380,16 @@ function createMainWindow() {
     return MEDIA_PERMISSIONS.has(permission) ? true : null
   })
 
+  // Enable system-audio (loopback) capture via getDisplayMedia, so the renderer
+  // can capture the caller's voice from the PC's audio output with no extra
+  // software. We supply a screen video source (required by the API) plus
+  // 'loopback' audio; the renderer keeps only the audio track.
+  mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      callback({ video: sources[0], audio: 'loopback' })
+    }).catch(() => callback({}))
+  }, { useSystemPicker: false })
+
   mainWindow.once('ready-to-show', () => mainWindow.show())
 
   if (isDev && rendererUrl) {

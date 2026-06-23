@@ -345,13 +345,13 @@ export default function Settings({ onClose, audioStatus = 'idle', audioError = '
             {[
               {
                 key: 'channel1DeviceId',
-                label: 'Channel 1 — Caller Voice',
-                hint: 'Select "CABLE Output" — captures audio Vicidial sends to CABLE Input'
+                label: 'Channel 1 — Soundboard',
+                hint: 'Select "CABLE Output" — captures the soundboard audio sent to CABLE Input'
               },
               {
                 key: 'channel2DeviceId',
-                label: 'Channel 2 — CSR Voice (optional)',
-                hint: 'Select your microphone to also stream the CSR\'s voice. Leave blank to stream caller only.'
+                label: 'Channel 2 — Caller Voice',
+                hint: 'Select "🔊 System Audio" to capture the caller\'s voice playing on the PC speakers. Both channels are mixed together on the phone.'
               }
             ].map(({ key, label, hint }) => (
               <div key={key} className="mb-3">
@@ -362,7 +362,8 @@ export default function Settings({ onClose, audioStatus = 'idle', audioError = '
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
                 >
                   <option value="">— select device —</option>
-                  {audio[key] && !audioDevices.some(d => d.deviceId === audio[key]) && (
+                  <option value="__system__">🔊 System Audio (captures what plays on PC speakers)</option>
+                  {audio[key] && audio[key] !== '__system__' && !audioDevices.some(d => d.deviceId === audio[key]) && (
                     <option value={audio[key]}>Saved device (click Scan to refresh)</option>
                   )}
                   {audioDevices.map(d => (
