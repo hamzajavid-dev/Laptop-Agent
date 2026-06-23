@@ -28,6 +28,7 @@ export default function AudioStreamer({ onStatusChange }) {
     let pc = null
     let localStream = null
     let lastCaptureError = ''
+    let captureWarnings = []
 
     function report(s, detail = '') { if (!destroyed) cbRef.current(s, detail) }
 
@@ -108,17 +109,27 @@ export default function AudioStreamer({ onStatusChange }) {
     }
 
     // Builds (or rebuilds) the local capture stream once; reused across renegotiations.
+    // Tracks per-channel failures so a partial failure (e.g. soundboard OK but
+    // System Audio failed) is reported instead of silently streaming one channel.
     async function ensureLocalStream(cfg) {
       if (localStream) return localStream
-      lastCaptureError = ''
-      const s1 = await captureChannel(cfg.channel1DeviceId)
-      const s2 = await captureChannel(cfg.channel2DeviceId)
-      const streams = [s1, s2].filter(Boolean)
-      if (streams.length === 0) return null
-
-      // Merge all captured tracks into one MediaStream so the offer carries them together.
+      captureWarnings = []
       const combined = new MediaStream()
-      streams.forEach(s => s.getAudioTracks().forEach(t => combined.addTrack(t)))
+
+      for (const [key, label] of [['channel1DeviceId', 'Channel 1'], ['channel2DeviceId', 'Channel 2']]) {
+        const id = cfg[key]
+        if (!id) continue
+        lastCaptureError = ''
+        const s = await captureChannel(id)
+        if (s) {
+          s.getAudioTracks().forEach(t => combined.addTrack(t))
+        } else {
+          captureWarnings.push(`${label} (${id === '__system__' ? 'System Audio' : 'device'}) failed: ${lastCaptureError || 'no audio'}`)
+        }
+      }
+
+      if (combined.getAudioTracks().length === 0) return null
+      console.log('[AudioStreamer] capturing', combined.getAudioTracks().length, 'track(s);', captureWarnings.length, 'warning(s)')
       localStream = combined
       return combined
     }
@@ -154,8 +165,9 @@ export default function AudioStreamer({ onStatusChange }) {
         if (destroyed || !pc) return
         const st = pc.connectionState
         console.log('[AudioStreamer] pc state:', st)
-        if (st === 'connected') report('streaming')
-        else if (st === 'connecting' || st === 'new') report('connecting')
+        const warn = captureWarnings.join(' | ')
+        if (st === 'connected') report('streaming', warn)
+        else if (st === 'connecting' || st === 'new') report('connecting', warn)
         else if (st === 'failed') report('error', 'WebRTC connection failed (check TURN server)')
         else if (st === 'disconnected') report('connecting', 'Reconnecting…')
       }
@@ -225,7 +237,7 @@ export default function AudioStreamer({ onStatusChange }) {
           // invite any viewer already waiting to (re)announce itself.
           const stream = await ensureLocalStream(audioCfg)
           if (!stream) { report('error', lastCaptureError || 'No audio devices could be captured'); return }
-          report('connecting', 'Waiting for dashboard…')
+          report('connecting', captureWarnings.length ? captureWarnings.join(' | ') : 'Waiting for dashboard…')
           ch.send({ type: 'broadcast', event: 'streamer-ready', payload: {} }).catch(() => {})
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           report('error', `Supabase channel ${status.toLowerCase().replace('_', ' ')}`)
