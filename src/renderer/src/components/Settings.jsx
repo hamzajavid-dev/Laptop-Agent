@@ -374,6 +374,37 @@ export default function Settings({ onClose, audioStatus = 'idle', audioError = '
             ))}
           </div>
 
+          {/* TURN server — required for the phone to connect across networks (mobile data / other WiFi) */}
+          <div className="pt-1">
+            <label className="block text-xs font-medium text-slate-400 mb-1">TURN Relay Server</label>
+            <p className="text-xs text-slate-600 mb-2">
+              Needed when the phone is on a different network. Get free credentials from metered.ca and paste them here and in the web app. Leave blank for same-WiFi only.
+            </p>
+            <input
+              value={audio.turnServer?.url || ''}
+              onChange={e => setAudio(a => ({ ...a, turnServer: { ...a.turnServer, url: e.target.value } }))}
+              placeholder="turn:relay.metered.ca:80"
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors mb-2"
+              spellCheck={false}
+            />
+            <div className="flex gap-2">
+              <input
+                value={audio.turnServer?.username || ''}
+                onChange={e => setAudio(a => ({ ...a, turnServer: { ...a.turnServer, username: e.target.value } }))}
+                placeholder="username"
+                className="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                spellCheck={false}
+              />
+              <input
+                value={audio.turnServer?.credential || ''}
+                onChange={e => setAudio(a => ({ ...a, turnServer: { ...a.turnServer, credential: e.target.value } }))}
+                placeholder="credential"
+                className="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+
         </div>
 
         {/* Footer */}

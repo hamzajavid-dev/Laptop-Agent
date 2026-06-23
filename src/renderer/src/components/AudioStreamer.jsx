@@ -1,18 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-const SAMPLE_RATE = 16000  // 16kHz — standard for voice
-const BUFFER_SIZE = 1024   // ~64ms per chunk at 16kHz (low latency; ~16 msgs/s per channel)
+// WebRTC offerer: captures the selected audio device(s) and sends them to the
+// web dashboard over a peer connection. Supabase Broadcast is used only for the
+// tiny signaling handshake (offer/answer/ICE) — the audio itself flows P2P, or
+// via the configured TURN relay when the phone is on a different network.
 
-function encodeChunk(float32) {
-  const int16 = new Int16Array(float32.length)
-  for (let i = 0; i < float32.length; i++) {
-    int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768))
+function iceServers(turn) {
+  const servers = [{ urls: 'stun:stun.l.google.com:19302' }]
+  if (turn?.url) {
+    servers.push({ urls: turn.url, username: turn.username || '', credential: turn.credential || '' })
   }
-  const bytes = new Uint8Array(int16.buffer)
-  let s = ''
-  for (let i = 0; i < bytes.byteLength; i++) s += String.fromCharCode(bytes[i])
-  return btoa(s)
+  return servers
 }
 
 export default function AudioStreamer({ onStatusChange }) {
@@ -23,18 +22,28 @@ export default function AudioStreamer({ onStatusChange }) {
     let destroyed = false
     let supabaseClient = null
     let channel = null
-    let audioCtx = null
-    let capturedStreams = []
+    let pc = null
+    let localStream = null
+    let lastCaptureError = ''
 
     function report(s, detail = '') { if (!destroyed) cbRef.current(s, detail) }
 
-    function stopAll() {
-      capturedStreams.forEach(s => s.getTracks().forEach(t => t.stop()))
-      capturedStreams = []
-      if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null }
+    function closePc() {
+      if (pc) {
+        pc.onicecandidate = null
+        pc.onconnectionstatechange = null
+        try { pc.close() } catch (_) {}
+        pc = null
+      }
     }
 
-    let lastCaptureError = ''
+    function stopAll() {
+      closePc()
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop())
+        localStream = null
+      }
+    }
 
     async function captureDevice(deviceId) {
       if (!deviceId) return null
@@ -61,67 +70,63 @@ export default function AudioStreamer({ onStatusChange }) {
       }
     }
 
-    async function startStreaming(cfg, ch) {
-      stopAll()
-      if (destroyed) return
-      report('connecting')
+    // Builds (or rebuilds) the local capture stream once; reused across renegotiations.
+    async function ensureLocalStream(cfg) {
+      if (localStream) return localStream
       lastCaptureError = ''
-
       const s1 = await captureDevice(cfg.channel1DeviceId)
       const s2 = await captureDevice(cfg.channel2DeviceId)
       const streams = [s1, s2].filter(Boolean)
+      if (streams.length === 0) return null
 
-      if (streams.length === 0) {
-        const detail = lastCaptureError || 'No audio devices could be captured'
-        console.error('[AudioStreamer]', detail)
-        report('error', detail)
+      // Merge all captured tracks into one MediaStream so the offer carries them together.
+      const combined = new MediaStream()
+      streams.forEach(s => s.getAudioTracks().forEach(t => combined.addTrack(t)))
+      localStream = combined
+      return combined
+    }
+
+    // (Re)create the peer connection and send a fresh offer. Called whenever a
+    // viewer announces it is ready (initial connect or phone reload/reconnect).
+    async function makeOffer(cfg, turn, ch) {
+      if (destroyed) return
+      closePc()
+
+      const stream = await ensureLocalStream(cfg)
+      if (!stream) {
+        report('error', lastCaptureError || 'No audio devices could be captured')
         return
       }
-      if (destroyed) { streams.forEach(s => s.getTracks().forEach(t => t.stop())); return }
 
-      capturedStreams = streams
-      audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE })
-      // Electron may start AudioContext suspended (autoplay policy); resume explicitly
-      // so onaudioprocess fires immediately without needing a user gesture.
-      await audioCtx.resume()
-
-      // Silent gain node — keeps audio graph alive without local playback
-      const sink = audioCtx.createGain()
-      sink.gain.value = 0
-      sink.connect(audioCtx.destination)
-
-      let sentCount = 0
-      let peak = 0
-      streams.forEach((stream, chIndex) => {
-        const source = audioCtx.createMediaStreamSource(stream)
-        const processor = audioCtx.createScriptProcessor(BUFFER_SIZE, 1, 1)
-
-        processor.onaudioprocess = (e) => {
-          if (destroyed) return
-          const samples = new Float32Array(e.inputBuffer.getChannelData(0))
-          for (let i = 0; i < samples.length; i++) { const a = Math.abs(samples[i]); if (a > peak) peak = a }
-          sentCount++
-          ch.send({
-            type: 'broadcast',
-            event: 'audio-chunk',
-            payload: { ch: chIndex, d: encodeChunk(samples), sr: SAMPLE_RATE }
-          }).catch(() => {})
-        }
-
-        source.connect(processor)
-        processor.connect(sink)
+      report('connecting')
+      pc = new RTCPeerConnection({
+        iceServers: iceServers(turn),
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
       })
 
-      // Diagnostic: confirms chunks are being produced AND whether they carry signal.
-      // peak ~0 for several seconds = correct device captured but it's silent (no audio on VB-Cable).
-      const diag = setInterval(() => {
-        if (destroyed) { clearInterval(diag); return }
-        console.log(`[AudioStreamer] sent ${sentCount} chunks, peak level ${peak.toFixed(3)} ${peak < 0.001 ? '(SILENT — check the selected device is receiving audio)' : ''}`)
-        sentCount = 0; peak = 0
-      }, 3000)
+      stream.getTracks().forEach(t => pc.addTrack(t, stream))
 
-      report('streaming')
-      console.log('[AudioStreamer] streaming', streams.length, 'channel(s) via Supabase Broadcast on', ch.topic)
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          ch.send({ type: 'broadcast', event: 'ice', payload: { from: 'laptop', candidate: e.candidate } }).catch(() => {})
+        }
+      }
+
+      pc.onconnectionstatechange = () => {
+        if (destroyed || !pc) return
+        const st = pc.connectionState
+        console.log('[AudioStreamer] pc state:', st)
+        if (st === 'connected') report('streaming')
+        else if (st === 'connecting' || st === 'new') report('connecting')
+        else if (st === 'failed') report('error', 'WebRTC connection failed (check TURN server)')
+        else if (st === 'disconnected') report('connecting', 'Reconnecting…')
+      }
+
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      ch.send({ type: 'broadcast', event: 'offer', payload: { sdp: pc.localDescription } }).catch(() => {})
+      console.log('[AudioStreamer] sent offer with', stream.getTracks().length, 'track(s)')
     }
 
     async function init() {
@@ -131,7 +136,12 @@ export default function AudioStreamer({ onStatusChange }) {
       ])
       if (destroyed) return
 
-      console.log('[AudioStreamer] config:', JSON.stringify({ enabled: audioCfg.enabled, ch1: audioCfg.channel1DeviceId?.slice(0,12), ch2: audioCfg.channel2DeviceId?.slice(0,12) }))
+      console.log('[AudioStreamer] config:', JSON.stringify({
+        enabled: audioCfg.enabled,
+        ch1: audioCfg.channel1DeviceId?.slice(0, 12),
+        ch2: audioCfg.channel2DeviceId?.slice(0, 12),
+        turn: audioCfg.turnServer?.url ? 'set' : 'none'
+      }))
 
       if (!audioCfg.enabled) {
         report('idle', 'Turn the toggle ON, then Save'); return
@@ -140,22 +150,48 @@ export default function AudioStreamer({ onStatusChange }) {
         report('idle', 'No device selected — pick CABLE Output for Channel 1'); return
       }
       if (!settings.supabaseUrl || !settings.supabaseKey || !settings.agentId) {
-        console.error('[AudioStreamer] Missing Supabase settings')
         report('idle', 'Missing Supabase URL / Key / Agent ID'); return
       }
 
+      const turn = audioCfg.turnServer
       supabaseClient = createClient(settings.supabaseUrl, settings.supabaseKey)
-      const ch = supabaseClient.channel(`audio-stream-${settings.agentId}`, {
+      const ch = supabaseClient.channel(`audio-rtc-${settings.agentId}`, {
         config: { broadcast: { self: false } }
       })
       channel = ch
 
+      // A viewer (phone) joined or reloaded → start a fresh negotiation.
+      ch.on('broadcast', { event: 'viewer-ready' }, () => {
+        console.log('[AudioStreamer] viewer-ready → creating offer')
+        makeOffer(audioCfg, turn, ch)
+      })
+
+      ch.on('broadcast', { event: 'answer' }, async ({ payload }) => {
+        if (!pc) return
+        try {
+          await pc.setRemoteDescription(payload.sdp)
+          console.log('[AudioStreamer] applied answer')
+        } catch (e) {
+          console.error('[AudioStreamer] setRemoteDescription(answer) failed', e)
+        }
+      })
+
+      ch.on('broadcast', { event: 'ice' }, async ({ payload }) => {
+        if (payload.from !== 'viewer' || !pc) return
+        try { await pc.addIceCandidate(payload.candidate) } catch (e) { console.warn('[AudioStreamer] addIceCandidate failed', e) }
+      })
+
       ch.subscribe(async (status, err) => {
-        console.log('[AudioStreamer] Supabase channel:', status, err || '')
+        console.log('[AudioStreamer] signaling channel:', status, err || '')
         if (status === 'SUBSCRIBED' && !destroyed) {
-          await startStreaming(audioCfg, ch)
+          // Pre-capture so the device error (if any) surfaces immediately, and
+          // invite any viewer already waiting to (re)announce itself.
+          const stream = await ensureLocalStream(audioCfg)
+          if (!stream) { report('error', lastCaptureError || 'No audio devices could be captured'); return }
+          report('connecting', 'Waiting for dashboard…')
+          ch.send({ type: 'broadcast', event: 'streamer-ready', payload: {} }).catch(() => {})
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          if (!destroyed) report('error', `Supabase channel ${status.toLowerCase().replace('_', ' ')}`)
+          report('error', `Supabase channel ${status.toLowerCase().replace('_', ' ')}`)
         }
       })
     }
