@@ -9,7 +9,10 @@ import { createClient } from '@supabase/supabase-js'
 function iceServers(turn) {
   const servers = [{ urls: 'stun:stun.l.google.com:19302' }]
   if (turn?.url) {
-    servers.push({ urls: turn.url, username: turn.username || '', credential: turn.credential || '' })
+    // Accept several comma/space/newline-separated URLs sharing one credential —
+    // mobile networks often need the TCP/443 + turns: variants to get through.
+    const urls = turn.url.split(/[\s,]+/).filter(Boolean)
+    if (urls.length) servers.push({ urls, username: turn.username || '', credential: turn.credential || '' })
   }
   return servers
 }
